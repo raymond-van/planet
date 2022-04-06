@@ -2,10 +2,10 @@ import random
 
 # Experience Replay Buffer
 class ExpReplay():
-    def __init__(self, batch_sz, chunk_len):
+    def __init__(self):
         self.replay = []
-        self.batch_sz = batch_sz
-        self.chunk_len = chunk_len
+        self.batch_sz = 50
+        self.chunk_len = 50
         
     # Sample batch of sequences
     def sample_batch(self):

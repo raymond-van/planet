@@ -1,3 +1,9 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
 # get_ipython().run_line_magic('config', "InlineBackend.figure_format = 'svg'")
 # get_ipython().run_line_magic('env', 'MUJOCO_GL=egl')
 import matplotlib
@@ -7,7 +13,7 @@ import torch
 import torchvision
 from dm_control import suite
 from dm_control.suite.wrappers import pixels
-from models import Encoder, Decoder, AutoEncoder
+from models import Encoder, Decoder, RewardModel, RSSM
 from replay import ExpReplay
 from torch import optim
 from torch.nn import functional as F
@@ -17,85 +23,91 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 matplotlib.rcParams['animation.embed_limit'] = 2**128
 random_state = np.random.RandomState(0)
 
+
+# In[2]:
+
+
 # For animations to render inline in jupyter,
 # download ffmpeg and set the path below to the location of the ffmpeg executable
 # plt.rcParams['animation.ffmpeg_path'] = '/usr/bin/ffmpeg'
 
 
-SEED_EPS = 4
-BATCH_SZ = 30
-CHUNK_LEN = 20
-img_shape = (3, 64, 64)
-data = ExpReplay(BATCH_SZ, CHUNK_LEN)
+# In[3]:
 
-env = suite.load('cheetah', 'run')
+
+SEED_EPS = 5
+TRAIN_EPS = 100
+UPDATES = 100
+ACTION_REPEAT = 8
+
+
+# In[4]:
+
+
+env = suite.load('cartpole', 'swingup')
 env = pixels.Wrapper(env) # only use pixels instead of internal state
 act_spec = env.action_spec()
+action_dim = act_spec.shape[0]
+
+data = ExpReplay()
+
+
+# In[5]:
 
 
 # Generate random seed data
+total_reward_seed = 0
+t = 0
 for i in range(SEED_EPS):
     state = env.reset()
+    reward = 0
     while not state.last():
-        action = random_state.uniform(act_spec.minimum, act_spec.maximum, act_spec.shape)
+        t += 1
+        action = random_state.uniform(act_spec.minimum, act_spec.maximum, action_dim)
         reward = state.reward
-        obs = env.physics.render(camera_id=0, height=200, width=200)
-        obs = preprocess_img(obs)
-        data.replay.append((obs, action, reward))
+        if reward:
+            total_reward_seed += reward
+        frame = env.physics.render(camera_id=0, height=200, width=200)
+        frame = preprocess_img(frame)
+        data.replay.append((frame, action, reward))
         state = env.step(action)
+print("Avg reward per ep: ",total_reward_seed/5)
+print("Avg timesteps per ep: ", t/5)
 
-def get_obs_from_data(obs, replay):
+
+# In[6]:
+
+
+def extract_from_replay(replay):
+    obs = []
+    rewards = []
+    actions = []
     for i in range(len(replay)):
-        obs.append(replay[0][0])
-        
-obs = []
-get_obs_from_data(obs, data.replay)
-
-enc = Encoder()
-dec = Decoder()
-autoencoder = AutoEncoder(enc, dec).to(device)
-optimizer = optim.Adam(autoencoder.parameters(), lr=1e-3, eps=1e-4)
-loss_fn = torch.nn.MSELoss()
-epochs = 15
-
-train_data = obs[:3200]
-test_data = obs[3200:]
-
-train_loader = torch.utils.data.DataLoader(
-    train_data, batch_size=128, shuffle=True, num_workers=4, pin_memory=True
-)
-
-test_loader = torch.utils.data.DataLoader(
-    test_data, batch_size=32, shuffle=False, num_workers=4
-)
+        obs.append(replay[i][0])
+        actions.append(replay[i][1])
+        rewards.append(replay[i][2])
+    return obs, actions, rewards
+obs, actions, rewards = extract_from_replay(data.replay)
 
 
-losses = []
-for epoch in range(epochs):
-    loss = 0
-    for batch in train_loader:
-        batch = batch.to(device)
-        optimizer.zero_grad()
-        outputs = autoencoder(batch)
-        train_loss = loss_fn(outputs, batch)
-        train_loss.backward()
-        optimizer.step()
-
-        loss += train_loss.item()
-
-    loss = loss / len(train_loader)
-    losses.append(loss)
-
-    print("epoch : {}/{}, loss = {:.6f}".format(epoch + 1, epochs, loss))
+# In[7]:
 
 
-plt.plot(losses)
+obs[0].shape
 
 
-test_batch = next(iter(test_loader))
-test_ex = test_batch[0]
-display_img(test_ex)
+# In[10]:
 
-rec_test = autoencoder(test_ex.to(device))
-display_img(torch.squeeze(rec_test.cpu()).detach())
+
+enc = Encoder().to(device)
+dec = Decoder().to(device)
+reward_model = RewardModel().to(device)
+rssm = RSSM(action_dim).to(device)
+optimizer = optim.Adam(rssm.parameters(), lr=1e-3, eps=1e-4)
+
+
+# In[ ]:
+
+
+
 

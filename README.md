@@ -7,14 +7,14 @@ PlaNet is a model-based RL agent that leverages its world model to plan in laten
 ## Dependencies:
 - PyTorch
 - DeepMind Control Suite
-- ffmpeg (to render inline jupyter animations)
+- ffmpeg (optional: to render inline jupyter animations)
 - OpenCV
 
 ## Checklist:
 - [x] Generate random seed episodes
 - [x] Implement experience replay
-- [ ] Define transition model / stochastic state model
-- [ ] Define reward model
+- [x] Define transition model / RSSM
+- [x] Define reward model
 - [x] Define decoder (observation model)
 - [x] Define state encoder
 - [ ] Implement planner
