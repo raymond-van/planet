@@ -4,8 +4,8 @@
 # In[1]:
 
 
-# get_ipython().run_line_magic('config', "InlineBackend.figure_format = 'svg'")
-# get_ipython().run_line_magic('env', 'MUJOCO_GL=egl')
+get_ipython().run_line_magic('config', "InlineBackend.figure_format = 'svg'")
+get_ipython().run_line_magic('env', 'MUJOCO_GL=egl')
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,6 +14,7 @@ import torchvision
 from dm_control import suite
 from dm_control.suite.wrappers import pixels
 from models import Encoder, Decoder, RewardModel, RSSM
+from mpc import MPC
 from replay import ExpReplay
 from torch import optim
 from torch.nn import functional as F
@@ -35,7 +36,7 @@ random_state = np.random.RandomState(0)
 # In[3]:
 
 
-SEED_EPS = 5
+SEED_EPS = 2
 TRAIN_EPS = 100
 UPDATES = 100
 ACTION_REPEAT = 8
@@ -71,8 +72,8 @@ for i in range(SEED_EPS):
         frame = preprocess_img(frame)
         data.replay.append((frame, action, reward))
         state = env.step(action)
-print("Avg reward per ep: ",total_reward_seed/5)
-print("Avg timesteps per ep: ", t/5)
+print("Avg reward per ep: ",total_reward_seed/SEED_EPS)
+print("Avg timesteps per ep: ", t/SEED_EPS)
 
 
 # In[6]:
@@ -96,7 +97,7 @@ obs, actions, rewards = extract_from_replay(data.replay)
 obs[0].shape
 
 
-# In[10]:
+# In[8]:
 
 
 enc = Encoder().to(device)
@@ -105,9 +106,5 @@ reward_model = RewardModel().to(device)
 rssm = RSSM(action_dim).to(device)
 optimizer = optim.Adam(rssm.parameters(), lr=1e-3, eps=1e-4)
 
-
-# In[ ]:
-
-
-
+planner = MPC(action_dim)
 

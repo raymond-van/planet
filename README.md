@@ -17,5 +17,7 @@ PlaNet is a model-based RL agent that leverages its world model to plan in laten
 - [x] Define reward model
 - [x] Define decoder (observation model)
 - [x] Define state encoder
-- [ ] Implement planner
-- [ ] Put everything together and train
+- [x] Implement planner
+- [ ] Implement data collection using planner
+- [ ] Define training objective
+

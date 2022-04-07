@@ -5,8 +5,9 @@ from torch.nn import functional as F
 # Convolutional encoder
 # Extracts 1024-dimensional features from observations
 class Encoder(nn.Module):
-    def __init__(self):
+    def __init__(self, feature_sz=1024):
         super().__init__()
+        self.feature_sz = feature_sz
         self.conv1 = nn.Conv2d(3, 32, 4, stride=2)
         self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
         self.conv3 = nn.Conv2d(64, 128, 4, stride=2)
@@ -17,21 +18,21 @@ class Encoder(nn.Module):
         code = F.relu(self.conv2(code))
         code = F.relu(self.conv3(code))
         code = F.relu(self.conv4(code))
-        code = code.view(-1, 1024)
+        code = code.view(-1, self.feature_sz)
         return code
     
 # Transpose conv decoder (Observation model)
 # Reconstruct observation from determinstic + stochastic state
 class Decoder(nn.Module):
-    def __init__(self):
+    def __init__(self, det_sz=200, stoc_sz=30, feature_sz=1024):
         super().__init__()
-        self.fc1 = nn.Linear(200 + 30, 1024)
-        self.deconv1 = nn.ConvTranspose2d(1024, 128, 5, stride=2)
+        self.fc1 = nn.Linear(det_sz + stoc_sz, feature_sz)
+        self.deconv1 = nn.ConvTranspose2d(feature_sz, 128, 5, stride=2)
         self.deconv2 = nn.ConvTranspose2d(128, 64, 5, stride=2)
         self.deconv3 = nn.ConvTranspose2d(64, 32, 6, stride=2)
         self.deconv4 = nn.ConvTranspose2d(32, 3, 6, stride=2)
  
-    def forward(self, det_state, stoc_state):
+    def forward(self, det_state=200, stoc_state=30):
         rec_obs = F.relu(self.fc1(torch.cat((det_state, stoc_state), dim=1)))
         rec_obs = F.relu(self.deconv1(rec_obs))
         rec_obs = F.relu(self.deconv2(rec_obs))
@@ -41,10 +42,10 @@ class Decoder(nn.Module):
     
 # Predicts reward from deterministic + stochastic (posterior) state
 class RewardModel(nn.Module):
-    def __init__(self):
+    def __init__(self, det_sz=200, stoc_sz=30):
         super().__init__()
-        self.fc1 = nn.Linear(200 + 30,200)
-        self.fc2 = nn.Linear(200, 1)
+        self.fc1 = nn.Linear(det_sz + stoc_sz, det_sz)
+        self.fc2 = nn.Linear(det_sz, 1)
         
     def forward(self, det_stoc_state):
         reward = F.relu(self.fc1(det_stoc_state))
@@ -52,31 +53,57 @@ class RewardModel(nn.Module):
     
 # Deterministic + stochastic state model
 class RSSM(nn.Module):
-    def __init__(self, action_dim):
+    def __init__(self, action_dim, det_sz=200, stoc_sz=30, feature_sz=1024):
         super().__init__()
-        self.fc1 = nn.Linear(30 + action_dim, 200)
-        self.gru = nn.GRUCell(200, 200)
-        self.fc2 = nn.Linear(200, 30 + 30)
-        self.fc3 = nn.Linear(200 + 1024, 30 + 30)
+        self.rnn = RNN(det_sz, stoc_sz, action_dim)
+        self.ssm = SSM(det_sz, stoc_sz, feature_sz)
+        
     def forward(self, prev_det, prev_stoc, action, obs_feat=None):
+        det_state = self.rnn(prev_det, prev_stoc, action)
+        if obs_feat != None:
+            prior_state, prior_state_mean, prior_state_dev, post_state, post_state_mean, post_state_dev = self.ssm(det_state, obs_feat)
+            return det_state, prior_state, prior_state_mean, prior_state_dev, post_state, post_state_mean, post_state_dev
+        else:
+            prior_state, prior_state_mean, prior_state_dev = self.ssm(det_state)
+            return det_state, prior_state, prior_state_mean, prior_state_dev
+  
+    
+# Deterministic state model
+class RNN(nn.Module):
+    def __init__(self, det_sz, stoc_sz, action_dim):
+        super().__init__()
+        self.fc1 = nn.Linear(stoc_sz + action_dim, det_sz)
+        self.gru = nn.GRUCell(det_sz, det_sz)
+    
+    def forward(self, prev_det, prev_stoc, action):
         prev_state_action = F.relu(self.fc1(torch.cat((prev_stoc, action))))
         det_state = self.gru(prev_state_action, prev_det)
-        prior_state_mean_dev = torch.split(F.relu(self.fc2(det_state)).unsqueeze(dim=0), 30, dim=1)
+        return det_state
+
+# Stochastic state model
+class SSM(nn.Module):
+    def __init__(self, det_sz, stoc_sz, feature_sz):
+        super().__init__()
+        self.stoc_sz = stoc_sz
+        self.fc1 = nn.Linear(det_sz, stoc_sz + stoc_sz)
+        self.fc2 = nn.Linear(det_sz + feature_sz, stoc_sz + stoc_sz)
+        
+    def forward(self, det_state, obs_feat=None):
+        prior_state_mean_dev = torch.split(F.relu(self.fc1(det_state)).unsqueeze(dim=0), self.stoc_sz, dim=1)
         prior_state_mean = prior_state_mean_dev[0]
         prior_state_dev = prior_state_mean_dev[1]
         prior_state = prior_state_mean + prior_state_dev * torch.randn_like(prior_state_mean)
-        # return deterministic state, prior stochastic state, posterior stochatic state given obs
         if obs_feat != None:
-            post_state_mean_dev = torch.split(F.relu(self.fc3(torch.cat((det_state, obs_feat.squeeze())))).unsqueeze(dim=0), 30, dim=1)
+            post_state_mean_dev = torch.split(F.relu(self.fc2(torch.cat((det_state, obs_feat.squeeze())))).unsqueeze(dim=0), self.stoc_sz, dim=1)
             post_state_mean = post_state_mean_dev[0]
             post_state_dev = post_state_mean_dev[1]
             post_state = post_state_mean + post_state_dev * torch.randn_like(post_state_mean)
-            return det_state, prior_state, prior_state_mean, prior_state_dev, post_state, post_state_mean, post_state_dev
-        # return deterministic state, prior stochastic state
+            return prior_state, prior_state_mean, prior_state_dev, post_state, post_state_mean, post_state_dev
         else:
-            return det_state, prior_state, prior_state_mean, prior_state_dev
+            return prior_state, prior_state_mean, prior_state_dev
+            
     
-        
+    
 # Testing encoder and decoder to see if working as intended
 # Not part of final implementation
 # class AutoEncoder(nn.Module):
