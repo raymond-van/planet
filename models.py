@@ -32,8 +32,8 @@ class Decoder(nn.Module):
         self.deconv3 = nn.ConvTranspose2d(64, 32, 6, stride=2)
         self.deconv4 = nn.ConvTranspose2d(32, 3, 6, stride=2)
  
-    def forward(self, det_state=200, stoc_state=30):
-        rec_obs = F.relu(self.fc1(torch.cat((det_state, stoc_state), dim=1)))
+    def forward(self, det_state, stoc_state):
+        rec_obs = F.relu(self.fc1(torch.cat((det_state, stoc_state), dim=1))).unsqueeze(dim=1)
         rec_obs = F.relu(self.deconv1(rec_obs))
         rec_obs = F.relu(self.deconv2(rec_obs))
         rec_obs = F.relu(self.deconv3(rec_obs))
@@ -58,15 +58,17 @@ class RSSM(nn.Module):
         self.rnn = RNN(det_sz, stoc_sz, action_dim)
         self.ssm = SSM(det_sz, stoc_sz, feature_sz)
         
-    def forward(self, prev_det, prev_stoc, action, obs_feat=None):
+    def drnn(self, prev_det, prev_stoc, action):
         det_state = self.rnn(prev_det, prev_stoc, action)
-        if obs_feat != None:
-            prior_state, prior_state_mean, prior_state_dev, post_state, post_state_mean, post_state_dev = self.ssm(det_state, obs_feat)
-            return det_state, prior_state, prior_state_mean, prior_state_dev, post_state, post_state_mean, post_state_dev
-        else:
-            prior_state, prior_state_mean, prior_state_dev = self.ssm(det_state)
-            return det_state, prior_state, prior_state_mean, prior_state_dev
-  
+        return det_state
+    
+    def ssm_prior(self, det_state):
+        prior_state, prior_state_mean, prior_state_dev = self.ssm(det_state)
+        return prior_state, prior_state_mean, prior_state_dev
+   
+    def ssm_posterior(self, det_state, obs_feat):
+        post_state, post_state_mean, post_state_dev = self.ssm(det_state, obs_feat)
+        return post_state, post_state_mean, post_state_dev
     
 # Deterministic state model
 class RNN(nn.Module):
@@ -76,7 +78,11 @@ class RNN(nn.Module):
         self.gru = nn.GRUCell(det_sz, det_sz)
     
     def forward(self, prev_det, prev_stoc, action):
-        prev_state_action = F.relu(self.fc1(torch.cat((prev_stoc, action))))
+        if action.dim() > 1:
+            dim = 1
+        else:
+            dim = 0
+        prev_state_action = F.relu(self.fc1(torch.cat((prev_stoc, action), dim=dim)))
         det_state = self.gru(prev_state_action, prev_det)
         return det_state
 
@@ -89,19 +95,22 @@ class SSM(nn.Module):
         self.fc2 = nn.Linear(det_sz + feature_sz, stoc_sz + stoc_sz)
         
     def forward(self, det_state, obs_feat=None):
-        prior_state_mean_dev = torch.split(F.relu(self.fc1(det_state)).unsqueeze(dim=0), self.stoc_sz, dim=1)
-        prior_state_mean = prior_state_mean_dev[0]
-        prior_state_dev = prior_state_mean_dev[1]
-        prior_state = prior_state_mean + prior_state_dev * torch.randn_like(prior_state_mean)
-        if obs_feat != None:
-            post_state_mean_dev = torch.split(F.relu(self.fc2(torch.cat((det_state, obs_feat.squeeze())))).unsqueeze(dim=0), self.stoc_sz, dim=1)
+        if det_state.dim() > 1:
+            dim = 1
+        else:
+            dim = 0
+        if obs_feat == None:
+            prior_state_mean_dev = torch.split(F.relu(self.fc1(det_state)).unsqueeze(dim=0), self.stoc_sz, dim=1)
+            prior_state_mean = prior_state_mean_dev[0]
+            prior_state_dev = prior_state_mean_dev[1]
+            prior_state = prior_state_mean + prior_state_dev * torch.randn_like(prior_state_mean)
+            return prior_state, prior_state_mean, prior_state_dev
+        else:  
+            post_state_mean_dev = torch.split(F.relu(self.fc2(torch.cat((det_state, obs_feat.squeeze()),dim=dim))), self.stoc_sz, dim=dim)
             post_state_mean = post_state_mean_dev[0]
             post_state_dev = post_state_mean_dev[1]
             post_state = post_state_mean + post_state_dev * torch.randn_like(post_state_mean)
-            return prior_state, prior_state_mean, prior_state_dev, post_state, post_state_mean, post_state_dev
-        else:
-            return prior_state, prior_state_mean, prior_state_dev
-            
+            return post_state, post_state_mean, post_state_dev
     
     
 # Testing encoder and decoder to see if working as intended

@@ -5,10 +5,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # MPC planning algorithm
 class MPC():
     def __init__(self, action_dim):
-        self.horizon = 12
-        self.opt_iters = 10 
-        self.num_candidates = 1000 
-        self.num_best_candidates = 100
+        self.horizon = 8
+        self.opt_iters = 4 
+        self.num_candidates = 100 
+        self.num_best_candidates = 20
         self.action_dim = action_dim
         
     def get_action(self, det_state, stoc_state, rssm, reward_model):
@@ -25,7 +25,8 @@ class MPC():
                 horizon_reward = 0
                 for t in range(self.horizon):
                     with torch.no_grad():
-                        planning_det_state, planning_stoc_state, _, _ = rssm(planning_det_state.to(device), planning_stoc_state.to(device), candidate_actions[c][t].to(device))
+                        planning_det_state = rssm.drnn(planning_det_state.to(device), planning_stoc_state.to(device), candidate_actions[c][t].to(device))
+                        planning_stoc_state = rssm.ssm_prior(planning_det_state.to(device))
                         planning_stoc_state = planning_stoc_state.squeeze()
                         horizon_reward += reward_model(torch.cat((planning_det_state, planning_stoc_state)).to(device))
                 candidate_rewards.append(horizon_reward)

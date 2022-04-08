@@ -4,8 +4,8 @@
 # In[1]:
 
 
-get_ipython().run_line_magic('config', "InlineBackend.figure_format = 'svg'")
-get_ipython().run_line_magic('env', 'MUJOCO_GL=egl')
+# get_ipython().run_line_magic('config', "InlineBackend.figure_format = 'svg'")
+# get_ipython().run_line_magic('env', 'MUJOCO_GL=egl')
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
