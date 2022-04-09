@@ -33,7 +33,11 @@ class Decoder(nn.Module):
         self.deconv4 = nn.ConvTranspose2d(32, 3, 6, stride=2)
  
     def forward(self, det_state, stoc_state):
-        rec_obs = F.relu(self.fc1(torch.cat((det_state, stoc_state), dim=1))).unsqueeze(dim=1)
+        if det_state.dim() > 1:
+            dim = 1
+        else:
+            dim = 0
+        rec_obs = F.relu(self.fc1(torch.cat((det_state, stoc_state), dim=dim))).unsqueeze(dim=det_state.dim()).unsqueeze(dim=det_state.dim())
         rec_obs = F.relu(self.deconv1(rec_obs))
         rec_obs = F.relu(self.deconv2(rec_obs))
         rec_obs = F.relu(self.deconv3(rec_obs))
@@ -49,7 +53,7 @@ class RewardModel(nn.Module):
         
     def forward(self, det_stoc_state):
         reward = F.relu(self.fc1(det_stoc_state))
-        return self.fc2(reward)
+        return self.fc2(reward).squeeze()
     
 # Deterministic + stochastic state model
 class RSSM(nn.Module):
@@ -100,15 +104,15 @@ class SSM(nn.Module):
         else:
             dim = 0
         if obs_feat == None:
-            prior_state_mean_dev = torch.split(F.relu(self.fc1(det_state)).unsqueeze(dim=0), self.stoc_sz, dim=1)
+            prior_state_mean_dev = torch.split(F.relu(self.fc1(det_state)), self.stoc_sz, dim=dim)
             prior_state_mean = prior_state_mean_dev[0]
-            prior_state_dev = prior_state_mean_dev[1]
+            prior_state_dev = prior_state_mean_dev[1] + 1e-6 # stddev must be positive
             prior_state = prior_state_mean + prior_state_dev * torch.randn_like(prior_state_mean)
             return prior_state, prior_state_mean, prior_state_dev
         else:  
             post_state_mean_dev = torch.split(F.relu(self.fc2(torch.cat((det_state, obs_feat.squeeze()),dim=dim))), self.stoc_sz, dim=dim)
             post_state_mean = post_state_mean_dev[0]
-            post_state_dev = post_state_mean_dev[1]
+            post_state_dev = post_state_mean_dev[1] + 1e-6  # stddev must be positive
             post_state = post_state_mean + post_state_dev * torch.randn_like(post_state_mean)
             return post_state, post_state_mean, post_state_dev
     
