@@ -5,10 +5,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # MPC planning algorithm
 class MPC():
     def __init__(self, action_dim):
-        self.horizon = 10
-        self.opt_iters = 5 
-        self.num_candidates = 200 
-        self.num_best_candidates = 20
+        self.horizon = 12
+        self.opt_iters = 4 
+        self.num_candidates = 100 
+        self.num_best_candidates = 10
         self.action_dim = action_dim
         
     def get_action(self, det_state, stoc_state, rssm, reward_model):

@@ -9,6 +9,7 @@ PlaNet is a model-based RL agent that leverages its world model to plan in laten
 - DeepMind Control Suite
 - ffmpeg (optional: to render inline jupyter animations)
 - OpenCV
+- imagemagick (save matplotlib animations as gifs)
 
 ## Checklist:
 - [x] Generate random seed episodes
@@ -18,6 +19,6 @@ PlaNet is a model-based RL agent that leverages its world model to plan in laten
 - [x] Define decoder (observation model)
 - [x] Define state encoder
 - [x] Implement planner
-- [ ] Implement data collection using planner
-- [ ] Define training objective
+- [x] Implement data collection using planner
+- [x] Define training objective
 

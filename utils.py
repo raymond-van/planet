@@ -19,13 +19,13 @@ def display_img(img):
 # Convert list of frames to inline jupyter animation
 # Credits to: DM Control Suite tutorial,
 # https://colab.research.google.com/github/deepmind/dm_control/blob/master/tutorial.ipynb
-def display_video(frames, framerate=30):
+def display_video(frames, framerate=30, return_anim=False):
     height, width, _ = frames[0].shape
     dpi = 70
     orig_backend = matplotlib.get_backend()
-    # matplotlib.use('Agg')  # Switch to headless 'Agg' to inhibit figure rendering.
+    matplotlib.use('Agg')  # Switch to headless 'Agg' to inhibit figure rendering.
     fig, ax = plt.subplots(1, 1, figsize=(width / dpi, height / dpi), dpi=dpi)
-    # matplotlib.use(orig_backend)  # Switch back to the original backend.
+    matplotlib.use(orig_backend)  # Switch back to the original backend.
     ax.set_axis_off()
     ax.set_aspect('equal')
     ax.set_position([0, 0, 1, 1])
@@ -37,8 +37,11 @@ def display_video(frames, framerate=30):
     anim = animation.FuncAnimation(fig=fig, func=update, frames=frames,
                                    interval=interval, blit=True, repeat=False)
     if is_notebook():
-        print("displaying in notebook")
-        return HTML(anim.to_jshtml())
+        # print("displaying in notebook")
+        if return_anim:
+            return anim
+        else: 
+            return HTML(anim.to_jshtml())
     else:
         print("displaying in script")
         return anim
@@ -56,3 +59,7 @@ def is_notebook():
 # Downscale image to 3x64x64 + transform to normalized tensors
 def preprocess_img(img):
     return torchvision.transforms.functional.to_tensor((cv2.resize(img, (64, 64))))
+
+def save_data(data, eps, suffix=""):
+    with open(os.path.join('data', '{task}_{eps}_{suffix}'.format(task=DOMAIN_TASK, eps=eps, suffix=suffix)), "wb") as fp:
+        pickle.dump(data, fp)
